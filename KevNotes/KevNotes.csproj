@@ -51,6 +51,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="KevNotesOptionsPackage.cs" />
     <Compile Include="KevNotesToolWindow.cs" />
     <Compile Include="KevNotesToolWindowCommand.cs" />
     <Compile Include="KevNotesToolWindowControl.xaml.cs">
@@ -80,6 +81,7 @@
     <VSCTCompile Include="KevNotesToolWindowPackage.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
     </VSCTCompile>
+    <Content Include="Resources\KevNotesOptionsPackage.ico" />
     <Content Include="Resources\KevNotesToolWindowCommand.png" />
     <Content Include="Resources\KevNotesToolWindowPackage.ico" />
   </ItemGroup>

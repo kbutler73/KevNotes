@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using EnvDTE;
+using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using System.Linq;
 using Newtonsoft.Json;
@@ -18,10 +19,11 @@ namespace KevNotes
     {
         private Events _dteEvents;
         private SolutionEvents _slnEvents;
-        private DTE _dte;
+        private DTE2 _dte;
+        private OutputWindowPane _outputPane;
 
         //private readonly string _path;
-        private const string _fileName = ".KevNotes.json";
+        private string _fileName = "";
 
         /// <summary>
         /// Initializes a new instance of the <see cref="KevNotesToolWindowControl"/> class.
@@ -38,23 +40,45 @@ namespace KevNotes
 
             try
             {
-                _dte = (DTE)ServiceProvider.GlobalProvider.GetService(typeof(DTE));
+                _dte = (DTE2)ServiceProvider.GlobalProvider.GetService(typeof(DTE));
 
                 _dteEvents = _dte.Events;
                 _slnEvents = _dteEvents.SolutionEvents;
                 _slnEvents.Opened += OnSolutionOpened;
                 _slnEvents.BeforeClosing += OnSolutionClosing;
 
+                OutputWindowPanes panes = _dte.ToolWindows.OutputWindow.OutputWindowPanes;
+                try
+                {
+                    _outputPane = panes.Item("KevNotes");
+                }
+                catch (ArgumentException)
+                {
+                    _outputPane = panes.Add("KevNotes");
+                }
+
                 OnSolutionOpened();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                WriteOutputAsync(ex.Message);
             }
+        }
+
+        private async Task WriteOutputAsync(string message)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            _outputPane.OutputString($"{message}{Environment.NewLine}");
         }
 
         private async void OnSolutionClosing()
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            await WriteOutputAsync($"Closing {_dte.Solution.FullName}");
             await SaveAsync();
+            tbNotes.Clear();
         }
 
         private async void OnSolutionOpened()
@@ -67,10 +91,18 @@ namespace KevNotes
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             try
             {
-                var solutionDir = Path.GetDirectoryName(_dte.Solution.FullName);
+                var solutionName = _dte.Solution.FullName;
+                if (string.IsNullOrWhiteSpace(solutionName)) return;
+                
+                var solutionDir = Path.Combine(Path.GetDirectoryName(solutionName), Path.GetFileNameWithoutExtension(solutionName) + ".json");
+
+                await WriteOutputAsync($"Loading {solutionName}");
                 if (solutionDir != null)
                 {
-                    var data = JsonConvert.DeserializeObject<NotesData>(File.ReadAllText(Path.Combine(solutionDir, _fileName)));
+                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                    _fileName = Path.Combine(appData, "kevNotes", solutionDir.Replace(":", ""));
+                    if (!File.Exists(_fileName)) return;
+                    var data = JsonConvert.DeserializeObject<NotesData>(File.ReadAllText(_fileName)); 
 
                     tbNotes.Text = data.Note;
                     tbNotes.FontFamily = data.FontFamily;
@@ -82,13 +114,20 @@ namespace KevNotes
                     cboFontFamily.SelectedItem = data.FontFamily;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                await WriteOutputAsync($"Error Loading KevNotes. {ex.Message}");
             }
         }
 
         private async Task SaveAsync()
         {
+            if (tbNotes.Text.Length == 0)
+            {
+                await WriteOutputAsync("Skipped saving because there is no text.");
+                return;
+            }
+
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
             try
             {
@@ -100,11 +139,19 @@ namespace KevNotes
                     Note = tbNotes.Text
                 };
 
-                var solutionDir = Path.GetDirectoryName(_dte.Solution.FullName);
-                File.WriteAllText(Path.Combine(solutionDir, _fileName), JsonConvert.SerializeObject(data));
+                var path = Path.GetDirectoryName(_fileName);
+                if (!Directory.Exists(path))
+                {
+                    Directory.CreateDirectory(path);
+                }
+                File.WriteAllText(_fileName, JsonConvert.SerializeObject(data));
+#if DEBUG
+                await WriteOutputAsync($"KevNotes Saved to {_fileName}");
+#endif
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                await WriteOutputAsync($"Error saving KevNotes. {ex.Message}");
             }
         }
 
@@ -113,22 +160,29 @@ namespace KevNotes
             await SaveAsync();
         }
 
-        private void Button_Click(object sender, RoutedEventArgs e)
+        private async void Button_Click(object sender, RoutedEventArgs e)
         {
             tbNotes.FontSize--;
+            await SaveAsync();
         }
 
-        private void Button_Click_1(object sender, RoutedEventArgs e)
+        private async void Button_Click_1(object sender, RoutedEventArgs e)
         {
             tbNotes.FontSize++;
+            await SaveAsync();
         }
 
         private async void cboFontFamily_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (cboFontFamily.SelectedItem is FontFamily font)
-                //var font = new FontFamily(cboFontFamily.SelectedItem.ToString());
-                tbNotes.FontFamily = font;
-            else tbNotes.FontFamily = new FontFamily("Ariel");
+            { 
+                tbNotes.FontFamily = font; 
+            }
+            else
+            {
+                tbNotes.FontFamily = new FontFamily("Ariel");
+            }
+            await SaveAsync();
         }
     }
 }
