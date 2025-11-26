@@ -3,10 +3,10 @@
     <Metadata>
         <Identity Id="KevNotes.5e72f29c-4a9d-4543-9904-254ebbb26daa" Version="1.0" Language="en-US" Publisher="Kevin Butler" />
         <DisplayName>KevNotes</DisplayName>
-        <Description xml:space="preserve">A handy place in Visual Studio to keep quick notesA han</Description>
+        <Description xml:space="preserve">A handy place in Visual Studio to keep quick notes</Description>
     </Metadata>
     <Installation>
-        <InstallationTarget Version="[16.0,18.0)" Id="Microsoft.VisualStudio.Community">
+        <InstallationTarget Version="[16.0,)" Id="Microsoft.VisualStudio.Community">
             <ProductArchitecture>amd64</ProductArchitecture>
         </InstallationTarget>
     </Installation>
@@ -14,7 +14,7 @@
         <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.5,)" />
     </Dependencies>
     <Prerequisites>
-        <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[16.0,18.0)" DisplayName="Visual Studio core editor" />
+        <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor" Version="[16.0,)" DisplayName="Visual Studio core editor" />
     </Prerequisites>
     <Assets>
         <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
