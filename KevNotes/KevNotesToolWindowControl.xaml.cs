@@ -8,8 +8,11 @@ using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using System.Linq;
 using Newtonsoft.Json;
-using System.Text.RegularExpressions;
+using System.Windows.Documents;
 using Task = System.Threading.Tasks.Task;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows.Input;
 
 namespace KevNotes
 {
@@ -26,8 +29,11 @@ namespace KevNotes
         private DTE2 _dte;
         private OutputWindowPane _outputPane;
         private bool _isLoading;
+        private bool _isFormatting;
         private const string NotesFolderName = "kevNotes";
         private string _fileName = string.Empty;
+        private static readonly Regex UrlRegex =
+            new Regex(@"^(https?://|www\.)\S+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="KevNotesToolWindowControl"/> class.
@@ -121,20 +127,18 @@ namespace KevNotes
                     return;
                 }
 
-                tbNotes.Text = data.Note ?? string.Empty;
+                SetNoteText(data.Note ?? string.Empty);
                 if (data.FontFamily != null)
                 {
-                    tbNotes.FontFamily = data.FontFamily;
+                    rtbNotes.FontFamily = data.FontFamily;
                 }
                 if (data.FontSize > 0)
                 {
-                    tbNotes.FontSize = data.FontSize;
+                    rtbNotes.FontSize = data.FontSize;
                 }
                 if (data.CaretIndex >= 0)
                 {
-                    tbNotes.CaretIndex = data.CaretIndex;
-                    var lineIndex = tbNotes.GetLineIndexFromCharacterIndex(data.CaretIndex);
-                    tbNotes.ScrollToLine(lineIndex);
+                    SetCaretIndex(data.CaretIndex);
                 }
 
                 if (data.FontFamily != null)
@@ -174,19 +178,63 @@ namespace KevNotes
             }
         }
 
-        private async void tbNotes_LostFocus(object sender, RoutedEventArgs e)
+        private async void rtbNotes_LostFocus(object sender, RoutedEventArgs e)
         {
             await SaveAsync();
+        }
+
+        private void rtbNotes_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isLoading || _isFormatting)
+            {
+                return;
+            }
+        }
+
+        private void rtbNotes_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == 0)
+            {
+                return;
+            }
+
+            var textPointer = rtbNotes.GetPositionFromPoint(e.GetPosition(rtbNotes), true);
+            if (textPointer == null)
+            {
+                return;
+            }
+
+            var word = GetWordAtPointer(textPointer);
+            if (string.IsNullOrWhiteSpace(word))
+            {
+                return;
+            }
+
+            var url = NormalizeUrl(word);
+            if (!UrlRegex.IsMatch(url))
+            {
+                return;
+            }
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+                e.Handled = true;
+            }
+            catch (Exception ex)
+            {
+                WriteOutputAsync($"Error opening link. {ex.Message}");
+            }
         }
 
         private NotesData CreateSnapshot()
         {
             return new NotesData
             {
-                CaretIndex = tbNotes.CaretIndex,
-                FontFamily = tbNotes.FontFamily,
-                FontSize = tbNotes.FontSize,
-                Note = tbNotes.Text ?? string.Empty
+                CaretIndex = GetCaretIndex(),
+                FontFamily = rtbNotes.FontFamily,
+                FontSize = rtbNotes.FontSize,
+                Note = GetNoteText()
             };
         }
 
@@ -209,13 +257,13 @@ namespace KevNotes
 
         private async void Button_Click(object sender, RoutedEventArgs e)
         {
-            tbNotes.FontSize--;
+            rtbNotes.FontSize--;
             await SaveAsync();
         }
 
         private async void Button_Click_1(object sender, RoutedEventArgs e)
         {
-            tbNotes.FontSize++;
+            rtbNotes.FontSize++;
             await SaveAsync();
         }
 
@@ -228,16 +276,16 @@ namespace KevNotes
 
             if (cboFontFamily.SelectedItem is FontFamily font)
             {
-                tbNotes.FontFamily = font;
+                rtbNotes.FontFamily = font;
             }
             else
             {
-                tbNotes.FontFamily = new FontFamily("Arial");
+                rtbNotes.FontFamily = new FontFamily("Arial");
             }
             await SaveAsync();
         }
 
-        private void tbNotes_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        private void rtbNotes_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
             if (e.Key == System.Windows.Input.Key.F3)
             {
@@ -304,8 +352,8 @@ namespace KevNotes
             }
 
             var comparison = GetFindComparison();
-            var text = tbNotes.Text ?? string.Empty;
-            var startIndex = Math.Max(tbNotes.SelectionStart + tbNotes.SelectionLength, 0);
+            var text = GetNoteText();
+            var startIndex = Math.Max(GetSelectionStart() + GetSelectionLength(), 0);
             var index = text.IndexOf(term, startIndex, comparison);
             if (index < 0 && startIndex > 0)
             {
@@ -326,8 +374,8 @@ namespace KevNotes
             }
 
             var comparison = GetFindComparison();
-            var text = tbNotes.Text ?? string.Empty;
-            var startIndex = Math.Max(tbNotes.SelectionStart - 1, 0);
+            var text = GetNoteText();
+            var startIndex = Math.Max(GetSelectionStart() - 1, 0);
             var index = text.LastIndexOf(term, startIndex, comparison);
             if (index < 0 && text.Length > 0)
             {
@@ -348,14 +396,13 @@ namespace KevNotes
             }
 
             var comparison = GetFindComparison();
-            var selection = tbNotes.SelectedText ?? string.Empty;
+            var selection = GetSelectedText();
             if (selection.Length > 0 && string.Equals(selection, term, comparison))
             {
                 var replaceWith = tbReplace.Text ?? string.Empty;
-                var selectionStart = tbNotes.SelectionStart;
-                tbNotes.SelectedText = replaceWith;
-                tbNotes.SelectionStart = selectionStart;
-                tbNotes.SelectionLength = replaceWith.Length;
+                var selectionStart = GetSelectionStart();
+                ReplaceSelectionText(replaceWith);
+                SetSelection(selectionStart, replaceWith.Length);
                 FindNext();
             }
             else
@@ -372,14 +419,10 @@ namespace KevNotes
             }
 
             var replaceWith = tbReplace.Text ?? string.Empty;
+            var text = GetNoteText();
             var comparison = GetFindComparison();
-            var options = comparison == StringComparison.CurrentCulture
-                ? RegexOptions.None
-                : RegexOptions.IgnoreCase;
-
-            var text = tbNotes.Text ?? string.Empty;
-            var regex = new Regex(Regex.Escape(term), options);
-            tbNotes.Text = regex.Replace(text, replaceWith);
+            var updated = ReplaceAllText(text, term, replaceWith, comparison);
+            SetNoteText(updated);
         }
 
         private bool TryGetFindText(out string term)
@@ -397,10 +440,211 @@ namespace KevNotes
 
         private void SelectMatch(int index, int length)
         {
-            tbNotes.Focus();
-            tbNotes.SelectionStart = index;
-            tbNotes.SelectionLength = length;
-            tbNotes.ScrollToLine(tbNotes.GetLineIndexFromCharacterIndex(index));
+            rtbNotes.Focus();
+            SetSelection(index, length);
+        }
+
+        private string GetNoteText()
+        {
+            var range = new System.Windows.Documents.TextRange(rtbNotes.Document.ContentStart, rtbNotes.Document.ContentEnd);
+            return NormalizeText(range.Text);
+        }
+
+        private void SetNoteText(string text)
+        {
+            _isFormatting = true;
+            try
+            {
+                rtbNotes.Document.Blocks.Clear();
+                rtbNotes.Document.Blocks.Add(new Paragraph(new Run(text)));
+            }
+            finally
+            {
+                _isFormatting = false;
+            }
+        }
+
+        private int GetCaretIndex()
+        {
+            return GetTextOffset(rtbNotes.Document.ContentStart, rtbNotes.CaretPosition);
+        }
+
+        private void SetCaretIndex(int index)
+        {
+            var position = GetTextPointerAtOffset(index);
+            if (position != null)
+            {
+                rtbNotes.CaretPosition = position;
+            }
+        }
+
+        private int GetSelectionStart()
+        {
+            return GetTextOffset(rtbNotes.Document.ContentStart, rtbNotes.Selection.Start);
+        }
+
+        private int GetSelectionLength()
+        {
+            return Math.Max(0, GetTextOffset(rtbNotes.Selection.Start, rtbNotes.Selection.End));
+        }
+
+        private string GetSelectedText()
+        {
+            var range = new System.Windows.Documents.TextRange(rtbNotes.Selection.Start, rtbNotes.Selection.End);
+            return NormalizeText(range.Text);
+        }
+
+        private void ReplaceSelectionText(string replacement)
+        {
+            rtbNotes.Selection.Text = replacement;
+        }
+
+        private void SetSelection(int start, int length)
+        {
+            var startPos = GetTextPointerAtOffset(start);
+            var endPos = GetTextPointerAtOffset(start + length);
+            if (startPos != null && endPos != null)
+            {
+                rtbNotes.Selection.Select(startPos, endPos);
+            }
+        }
+
+        private static string NormalizeUrl(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+
+            if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
+            if (text.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+            {
+                return "https://" + text;
+            }
+
+            return text;
+        }
+
+        private static string GetWordAtPointer(TextPointer pointer)
+        {
+            var wordStart = pointer;
+            var wordEnd = pointer;
+
+            while (wordStart != null && !IsWordBoundary(wordStart, LogicalDirection.Backward))
+            {
+                wordStart = wordStart.GetPositionAtOffset(-1, LogicalDirection.Backward);
+            }
+
+            while (wordEnd != null && !IsWordBoundary(wordEnd, LogicalDirection.Forward))
+            {
+                wordEnd = wordEnd.GetPositionAtOffset(1, LogicalDirection.Forward);
+            }
+
+            if (wordStart == null || wordEnd == null)
+            {
+                return string.Empty;
+            }
+
+            var range = new System.Windows.Documents.TextRange(wordStart, wordEnd);
+            return range.Text.Trim();
+        }
+
+        private static bool IsWordBoundary(TextPointer pointer, LogicalDirection direction)
+        {
+            var context = pointer.GetPointerContext(direction);
+            if (context != TextPointerContext.Text)
+            {
+                return true;
+            }
+
+            var text = pointer.GetTextInRun(direction);
+            if (string.IsNullOrEmpty(text))
+            {
+                return true;
+            }
+
+            var ch = direction == LogicalDirection.Forward ? text[0] : text[text.Length - 1];
+            return char.IsWhiteSpace(ch) || ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}' || ch == '<' || ch == '>' || ch == '"' || ch == '\'' || ch == ',';
+        }
+
+        private TextPointer GetTextPointerAtOffset(int offset)
+        {
+            var navigator = rtbNotes.Document.ContentStart;
+            var count = 0;
+            while (navigator != null)
+            {
+                if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+                {
+                    var textRun = navigator.GetTextInRun(LogicalDirection.Forward);
+                    if (count + textRun.Length >= offset)
+                    {
+                        return navigator.GetPositionAtOffset(offset - count);
+                    }
+                    count += textRun.Length;
+                    navigator = navigator.GetPositionAtOffset(textRun.Length);
+                }
+                else
+                {
+                    navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
+                }
+            }
+
+            return rtbNotes.Document.ContentEnd;
+        }
+
+        private int GetTextOffset(TextPointer start, TextPointer end)
+        {
+            if (start == null || end == null)
+            {
+                return 0;
+            }
+
+            return new System.Windows.Documents.TextRange(start, end).Text.Length;
+        }
+
+        private static string NormalizeText(string text)
+        {
+            if (text.EndsWith("\r\n", StringComparison.Ordinal))
+            {
+                return text.Substring(0, text.Length - 2);
+            }
+
+            return text;
+        }
+
+        private static string ReplaceAllText(string text, string term, string replaceWith, StringComparison comparison)
+        {
+            if (string.IsNullOrEmpty(term))
+            {
+                return text;
+            }
+
+            var comparisonType = comparison == StringComparison.CurrentCulture
+                ? StringComparison.CurrentCulture
+                : StringComparison.CurrentCultureIgnoreCase;
+
+            var result = new StringBuilder(text.Length);
+            var index = 0;
+            while (true)
+            {
+                var matchIndex = text.IndexOf(term, index, comparisonType);
+                if (matchIndex < 0)
+                {
+                    result.Append(text.Substring(index));
+                    break;
+                }
+
+                result.Append(text.Substring(index, matchIndex - index));
+                result.Append(replaceWith);
+                index = matchIndex + term.Length;
+            }
+
+            return result.ToString();
         }
 
         private static string GetNotesFilePath(string solutionFullName)
