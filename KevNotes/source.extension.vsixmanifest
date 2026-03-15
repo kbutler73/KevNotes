@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="KevNotes.5e72f29c-4a9d-4543-9904-254ebbb26daa" Version="1.0" Language="en-US" Publisher="Kevin Butler" />
+        <Identity Id="KevNotes.5e72f29c-4a9d-4543-9904-254ebbb26daa" Version="1.0.2" Language="en-US" Publisher="Kevin Butler" />
         <DisplayName>KevNotes</DisplayName>
         <Description xml:space="preserve">A handy place in Visual Studio to keep quick notes</Description>
     </Metadata>
