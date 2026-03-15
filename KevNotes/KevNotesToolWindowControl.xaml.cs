@@ -21,9 +21,10 @@ namespace KevNotes
         private SolutionEvents _slnEvents;
         private DTE2 _dte;
         private OutputWindowPane _outputPane;
+        private bool _isLoading;
 
-        //private readonly string _path;
-        private string _fileName = "";
+        private const string NotesFolderName = "kevNotes";
+        private string _fileName = string.Empty;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="KevNotesToolWindowControl"/> class.
@@ -69,7 +70,7 @@ namespace KevNotes
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            _outputPane.OutputString($"{message}{Environment.NewLine}");
+            _outputPane?.OutputString($"{message}{Environment.NewLine}");
         }
 
         private async void OnSolutionClosing()
@@ -89,28 +90,52 @@ namespace KevNotes
         private async Task LoadAsync()
         {
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            if (_isLoading)
+            {
+                return;
+            }
+
             try
             {
                 var solutionName = _dte.Solution.FullName;
                 if (string.IsNullOrWhiteSpace(solutionName)) return;
-                
-                var solutionDir = Path.Combine(Path.GetDirectoryName(solutionName), Path.GetFileNameWithoutExtension(solutionName) + ".json");
+
+                _isLoading = true;
+                _fileName = GetNotesFilePath(solutionName);
 
                 await WriteOutputAsync($"Loading {solutionName}");
-                if (solutionDir != null)
+                await WriteOutputAsync($"Looking for notes in {_fileName}");
+                if (!File.Exists(_fileName))
                 {
-                    var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                    _fileName = Path.Combine(appData, "kevNotes", solutionDir.Replace(":", ""));
-                    if (!File.Exists(_fileName)) return;
-                    var data = JsonConvert.DeserializeObject<NotesData>(File.ReadAllText(_fileName)); 
+                    tbNotes.Clear();
+                    cboFontFamily.SelectedItem = null;
+                    return;
+                }
 
-                    tbNotes.Text = data.Note;
+                var data = JsonConvert.DeserializeObject<NotesData>(File.ReadAllText(_fileName));
+                if (data == null)
+                {
+                    return;
+                }
+
+                tbNotes.Text = data.Note ?? string.Empty;
+                if (data.FontFamily != null)
+                {
                     tbNotes.FontFamily = data.FontFamily;
+                }
+                if (data.FontSize > 0)
+                {
                     tbNotes.FontSize = data.FontSize;
+                }
+                if (data.CaretIndex >= 0)
+                {
                     tbNotes.CaretIndex = data.CaretIndex;
                     var lineIndex = tbNotes.GetLineIndexFromCharacterIndex(data.CaretIndex);
                     tbNotes.ScrollToLine(lineIndex);
+                }
 
+                if (data.FontFamily != null)
+                {
                     cboFontFamily.SelectedItem = data.FontFamily;
                 }
             }
@@ -118,17 +143,26 @@ namespace KevNotes
             {
                 await WriteOutputAsync($"Error Loading KevNotes. {ex.Message}");
             }
+            finally
+            {
+                _isLoading = false;
+            }
         }
 
         private async Task SaveAsync()
         {
-            if (tbNotes.Text.Length == 0)
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            if (_isLoading || string.IsNullOrWhiteSpace(_fileName))
             {
-                await WriteOutputAsync("Skipped saving because there is no text.");
                 return;
             }
 
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            //if (string.IsNullOrWhiteSpace(tbNotes.Text))
+            //{
+            //    await WriteOutputAsync("Skipped saving because there is no text.");
+            //    return;
+            //}
+
             try
             {
                 var data = new NotesData
@@ -174,15 +208,30 @@ namespace KevNotes
 
         private async void cboFontFamily_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_isLoading)
+            {
+                return;
+            }
+
             if (cboFontFamily.SelectedItem is FontFamily font)
-            { 
-                tbNotes.FontFamily = font; 
+            {
+                tbNotes.FontFamily = font;
             }
             else
             {
-                tbNotes.FontFamily = new FontFamily("Ariel");
+                tbNotes.FontFamily = new FontFamily("Arial");
             }
             await SaveAsync();
+        }
+
+        private static string GetNotesFilePath(string solutionFullName)
+        {
+            var solutionDir = Path.GetDirectoryName(solutionFullName);
+            var solutionFile = Path.GetFileNameWithoutExtension(solutionFullName);
+            var jsonName = $"{solutionFile}.json";
+            var solutionPath = solutionDir == null ? jsonName : Path.Combine(solutionDir, jsonName);
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            return Path.Combine(appData, NotesFolderName, solutionPath.Replace(":", ""));
         }
     }
 }
