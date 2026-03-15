@@ -12,14 +12,75 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="25"></RowDefinition>
+            <RowDefinition Height="Auto"></RowDefinition>
             <RowDefinition Height="*"></RowDefinition>
         </Grid.RowDefinitions>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Grid.Row="0">
-            <ComboBox x:Name="cboFontFamily" SelectionChanged="cboFontFamily_SelectionChanged"></ComboBox>
-            <Button Width="25" Click="Button_Click">-</Button>
-            <Button Width="25" Click="Button_Click_1">+</Button>
+            <ComboBox x:Name="cboFontFamily" SelectionChanged="cboFontFamily_SelectionChanged"
+                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ComboBoxStyleKey}}"></ComboBox>
+            <Button Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Click="Button_Click"
+                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">-</Button>
+            <Button Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Click="Button_Click_1"
+                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">+</Button>
         </StackPanel>
-        <TextBox x:Name="tbNotes" Grid.Row="1"
+        <Border x:Name="FindBar" Grid.Row="1"
+                Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientBeginKey}}"
+                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"
+                BorderThickness="0,0,0,1"
+                Padding="6">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"></RowDefinition>
+                    <RowDefinition Height="Auto"></RowDefinition>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"></ColumnDefinition>
+                    <ColumnDefinition Width="*"></ColumnDefinition>
+                    <ColumnDefinition Width="Auto"></ColumnDefinition>
+                    <ColumnDefinition Width="Auto"></ColumnDefinition>
+                    <ColumnDefinition Width="Auto"></ColumnDefinition>
+                    <ColumnDefinition Width="Auto"></ColumnDefinition>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,6,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"
+                           Text="Find"></TextBlock>
+                <TextBox x:Name="tbFind" Grid.Row="0" Grid.Column="1" MinWidth="160" Margin="0,0,6,0"
+                         KeyDown="tbFind_KeyDown" TextChanged="tbFind_TextChanged"
+                         Style="{DynamicResource {x:Static vsshell:VsResourceKeys.TextBoxStyleKey}}"></TextBox>
+                <Button Grid.Row="0" Grid.Column="2" Margin="0,0,6,0" Click="FindNext_Click"
+                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">Next</Button>
+                <CheckBox x:Name="cbMatchCase" Grid.Row="0" Grid.Column="4" Margin="0,0,6,0" VerticalAlignment="Center"
+                          Content="Match case"
+                          Style="{DynamicResource {x:Static vsshell:VsResourceKeys.CheckBoxStyleKey}}"></CheckBox>
+
+                <Grid x:Name="ReplaceRow" Grid.Row="1" Grid.ColumnSpan="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"></ColumnDefinition>
+                        <ColumnDefinition Width="*"></ColumnDefinition>
+                        <ColumnDefinition Width="Auto"></ColumnDefinition>
+                        <ColumnDefinition Width="Auto"></ColumnDefinition>
+                        <ColumnDefinition Width="Auto"></ColumnDefinition>
+                        <ColumnDefinition Width="Auto"></ColumnDefinition>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Margin="0,6,6,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"
+                               Text="Replace"></TextBlock>
+                    <TextBox x:Name="tbReplace" Grid.Column="1" Margin="0,6,6,0"
+                             KeyDown="tbReplace_KeyDown"
+                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.TextBoxStyleKey}}"></TextBox>
+                    <Button Grid.Column="2" Margin="0,6,6,0" Click="Replace_Click"
+                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">Replace</Button>
+                    <Button Grid.Column="3" Margin="0,6,6,0" Click="ReplaceAll_Click"
+                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">Replace All</Button>
+                </Grid>
+            </Grid>
+        </Border>
+        <TextBox x:Name="tbNotes" Grid.Row="2"
                  Background="Transparent"
                  Foreground="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
                  CaretBrush="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
@@ -29,6 +90,7 @@
                  AcceptsReturn="True"
                  AcceptsTab="True"
                  VerticalScrollBarVisibility="Auto"
+                 PreviewKeyDown="tbNotes_PreviewKeyDown"
                  LostFocus="tbNotes_LostFocus" />
     </Grid>
 </UserControl>

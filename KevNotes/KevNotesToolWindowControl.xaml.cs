@@ -8,6 +8,7 @@ using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using System.Linq;
 using Newtonsoft.Json;
+using System.Text.RegularExpressions;
 using Task = System.Threading.Tasks.Task;
 
 namespace KevNotes
@@ -17,12 +18,14 @@ namespace KevNotes
     /// </summary>
     public partial class KevNotesToolWindowControl : UserControl
     {
+        private static readonly Lazy<FontFamily[]> FontFamilies =
+            new Lazy<FontFamily[]>(() => Fonts.SystemFontFamilies.OrderBy(x => x.ToString()).ToArray());
+
         private Events _dteEvents;
         private SolutionEvents _slnEvents;
         private DTE2 _dte;
         private OutputWindowPane _outputPane;
         private bool _isLoading;
-
         private const string NotesFolderName = "kevNotes";
         private string _fileName = string.Empty;
 
@@ -33,8 +36,9 @@ namespace KevNotes
         {
             Dispatcher.VerifyAccess();
             this.InitializeComponent();
+            ShowFindBar(showReplace: true);
 
-            foreach (var fontFamily in Fonts.SystemFontFamilies.OrderBy(x => x.ToString()))
+            foreach (var fontFamily in FontFamilies.Value)
             {
                 cboFontFamily.Items.Add(fontFamily);
             }
@@ -78,8 +82,8 @@ namespace KevNotes
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             await WriteOutputAsync($"Closing {_dte.Solution.FullName}");
-            await SaveAsync();
-            tbNotes.Clear();
+            var snapshot = CreateSnapshot();
+            await SaveSnapshotAsync(snapshot);
         }
 
         private async void OnSolutionOpened()
@@ -104,13 +108,12 @@ namespace KevNotes
                 _fileName = GetNotesFilePath(solutionName);
 
                 await WriteOutputAsync($"Loading {solutionName}");
-                await WriteOutputAsync($"Looking for notes in {_fileName}");
                 if (!File.Exists(_fileName))
                 {
-                    tbNotes.Clear();
-                    cboFontFamily.SelectedItem = null;
                     return;
                 }
+
+                await WriteOutputAsync($"Loading Notes from {_fileName}");
 
                 var data = JsonConvert.DeserializeObject<NotesData>(File.ReadAllText(_fileName));
                 if (data == null)
@@ -157,28 +160,10 @@ namespace KevNotes
                 return;
             }
 
-            //if (string.IsNullOrWhiteSpace(tbNotes.Text))
-            //{
-            //    await WriteOutputAsync("Skipped saving because there is no text.");
-            //    return;
-            //}
-
             try
             {
-                var data = new NotesData
-                {
-                    CaretIndex = tbNotes.CaretIndex,
-                    FontFamily = tbNotes.FontFamily,
-                    FontSize = tbNotes.FontSize,
-                    Note = tbNotes.Text
-                };
-
-                var path = Path.GetDirectoryName(_fileName);
-                if (!Directory.Exists(path))
-                {
-                    Directory.CreateDirectory(path);
-                }
-                File.WriteAllText(_fileName, JsonConvert.SerializeObject(data));
+                var data = CreateSnapshot();
+                await SaveSnapshotAsync(data);
 #if DEBUG
                 await WriteOutputAsync($"KevNotes Saved to {_fileName}");
 #endif
@@ -192,6 +177,34 @@ namespace KevNotes
         private async void tbNotes_LostFocus(object sender, RoutedEventArgs e)
         {
             await SaveAsync();
+        }
+
+        private NotesData CreateSnapshot()
+        {
+            return new NotesData
+            {
+                CaretIndex = tbNotes.CaretIndex,
+                FontFamily = tbNotes.FontFamily,
+                FontSize = tbNotes.FontSize,
+                Note = tbNotes.Text ?? string.Empty
+            };
+        }
+
+        private async Task SaveSnapshotAsync(NotesData data)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            if (data == null || string.IsNullOrWhiteSpace(_fileName))
+            {
+                return;
+            }
+
+            var path = Path.GetDirectoryName(_fileName);
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
+
+            File.WriteAllText(_fileName, JsonConvert.SerializeObject(data));
         }
 
         private async void Button_Click(object sender, RoutedEventArgs e)
@@ -222,6 +235,172 @@ namespace KevNotes
                 tbNotes.FontFamily = new FontFamily("Arial");
             }
             await SaveAsync();
+        }
+
+        private void tbNotes_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.F3)
+            {
+                if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Shift)
+                {
+                    FindPrevious();
+                }
+                else
+                {
+                    FindNext();
+                }
+                e.Handled = true;
+            }
+        }
+
+        private void tbFind_TextChanged(object sender, TextChangedEventArgs e)
+        {
+        }
+
+        private void tbFind_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                FindNext();
+                e.Handled = true;
+            }
+        }
+
+        private void tbReplace_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                ReplaceNext();
+                e.Handled = true;
+            }
+        }
+
+        private void FindNext_Click(object sender, RoutedEventArgs e)
+        {
+            FindNext();
+        }
+
+        private void Replace_Click(object sender, RoutedEventArgs e)
+        {
+            ReplaceNext();
+        }
+
+        private void ReplaceAll_Click(object sender, RoutedEventArgs e)
+        {
+            ReplaceAll();
+        }
+
+        private void ShowFindBar(bool showReplace)
+        {
+            ReplaceRow.Visibility = showReplace ? Visibility.Visible : Visibility.Collapsed;
+            tbReplace.IsEnabled = showReplace;
+        }
+
+        private void FindNext()
+        {
+            if (!TryGetFindText(out var term))
+            {
+                return;
+            }
+
+            var comparison = GetFindComparison();
+            var text = tbNotes.Text ?? string.Empty;
+            var startIndex = Math.Max(tbNotes.SelectionStart + tbNotes.SelectionLength, 0);
+            var index = text.IndexOf(term, startIndex, comparison);
+            if (index < 0 && startIndex > 0)
+            {
+                index = text.IndexOf(term, 0, comparison);
+            }
+
+            if (index >= 0)
+            {
+                SelectMatch(index, term.Length);
+            }
+        }
+
+        private void FindPrevious()
+        {
+            if (!TryGetFindText(out var term))
+            {
+                return;
+            }
+
+            var comparison = GetFindComparison();
+            var text = tbNotes.Text ?? string.Empty;
+            var startIndex = Math.Max(tbNotes.SelectionStart - 1, 0);
+            var index = text.LastIndexOf(term, startIndex, comparison);
+            if (index < 0 && text.Length > 0)
+            {
+                index = text.LastIndexOf(term, text.Length - 1, comparison);
+            }
+
+            if (index >= 0)
+            {
+                SelectMatch(index, term.Length);
+            }
+        }
+
+        private void ReplaceNext()
+        {
+            if (!TryGetFindText(out var term))
+            {
+                return;
+            }
+
+            var comparison = GetFindComparison();
+            var selection = tbNotes.SelectedText ?? string.Empty;
+            if (selection.Length > 0 && string.Equals(selection, term, comparison))
+            {
+                var replaceWith = tbReplace.Text ?? string.Empty;
+                var selectionStart = tbNotes.SelectionStart;
+                tbNotes.SelectedText = replaceWith;
+                tbNotes.SelectionStart = selectionStart;
+                tbNotes.SelectionLength = replaceWith.Length;
+                FindNext();
+            }
+            else
+            {
+                FindNext();
+            }
+        }
+
+        private void ReplaceAll()
+        {
+            if (!TryGetFindText(out var term))
+            {
+                return;
+            }
+
+            var replaceWith = tbReplace.Text ?? string.Empty;
+            var comparison = GetFindComparison();
+            var options = comparison == StringComparison.CurrentCulture
+                ? RegexOptions.None
+                : RegexOptions.IgnoreCase;
+
+            var text = tbNotes.Text ?? string.Empty;
+            var regex = new Regex(Regex.Escape(term), options);
+            tbNotes.Text = regex.Replace(text, replaceWith);
+        }
+
+        private bool TryGetFindText(out string term)
+        {
+            term = tbFind.Text;
+            return !string.IsNullOrEmpty(term);
+        }
+
+        private StringComparison GetFindComparison()
+        {
+            return cbMatchCase.IsChecked == true
+                ? StringComparison.CurrentCulture
+                : StringComparison.CurrentCultureIgnoreCase;
+        }
+
+        private void SelectMatch(int index, int length)
+        {
+            tbNotes.Focus();
+            tbNotes.SelectionStart = index;
+            tbNotes.SelectionLength = length;
+            tbNotes.ScrollToLine(tbNotes.GetLineIndexFromCharacterIndex(index));
         }
 
         private static string GetNotesFilePath(string solutionFullName)
