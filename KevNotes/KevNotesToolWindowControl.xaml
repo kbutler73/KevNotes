@@ -92,7 +92,6 @@
                  IsDocumentEnabled="True"
                  TextChanged="rtbNotes_TextChanged"
                  PreviewKeyDown="rtbNotes_PreviewKeyDown"
-                 PreviewMouseLeftButtonUp="rtbNotes_PreviewMouseLeftButtonUp"
                  LostFocus="rtbNotes_LostFocus">
             <RichTextBox.Resources>
                 <Style TargetType="{x:Type Paragraph}">

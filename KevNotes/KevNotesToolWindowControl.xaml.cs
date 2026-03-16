@@ -9,12 +9,11 @@ using Microsoft.VisualStudio.Shell;
 using System.Linq;
 using Newtonsoft.Json;
 using System.Windows.Documents;
-using System.Windows.Navigation;
-using Task = System.Threading.Tasks.Task;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Windows.Input;
 using System.Collections.Generic;
+using Task = System.Threading.Tasks.Task;
+using System.Windows.Navigation;
 
 namespace KevNotes
 {
@@ -212,6 +211,12 @@ namespace KevNotes
                 return;
             }
 
+            if (IsCaretInPotentialUrl(text))
+            {
+                _lastTextSnapshot = text;
+                return;
+            }
+
             var urlSignature = GetUrlSignature(text);
             if (string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
             {
@@ -223,42 +228,6 @@ namespace KevNotes
             ApplyLinkFormatting();
         }
 
-        private void rtbNotes_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == 0)
-            {
-                return;
-            }
-
-            var textPointer = rtbNotes.GetPositionFromPoint(e.GetPosition(rtbNotes), true);
-            if (textPointer == null)
-            {
-                return;
-            }
-
-            var word = GetWordAtPointer(textPointer);
-            if (string.IsNullOrWhiteSpace(word))
-            {
-                return;
-            }
-
-            var url = NormalizeUrl(word);
-            if (!UrlRegex.IsMatch(url))
-            {
-                return;
-            }
-
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-                e.Handled = true;
-            }
-            catch (Exception ex)
-            {
-                WriteOutputAsync($"Error opening link. {ex.Message}");
-            }
-        }
-
         private NotesData CreateSnapshot()
         {
             return new NotesData
@@ -266,7 +235,7 @@ namespace KevNotes
                 CaretIndex = GetCaretIndex(),
                 FontFamily = rtbNotes.FontFamily,
                 FontSize = rtbNotes.FontSize,
-                Note = NormalizeForSave(GetNoteText())
+                Note = NormalizeText(GetNoteText())
             };
         }
 
@@ -495,7 +464,7 @@ namespace KevNotes
             {
                 rtbNotes.Document.Blocks.Clear();
                 var paragraph = new Paragraph();
-                BuildInlinesWithLinks(paragraph, NormalizeForFormat(text));
+                BuildInlinesWithLinks(paragraph, NormalizeText(text));
                 rtbNotes.Document.Blocks.Add(paragraph);
                 _lastUrlSignature = GetUrlSignature(text);
                 _lastTextSnapshot = text ?? string.Empty;
@@ -513,7 +482,7 @@ namespace KevNotes
                 return;
             }
 
-            var text = NormalizeForFormat(GetNoteText());
+            var text = NormalizeText(GetNoteText());
             if (string.IsNullOrWhiteSpace(text) || !UrlScanRegex.IsMatch(text))
             {
                 return;
@@ -715,48 +684,6 @@ namespace KevNotes
             return text;
         }
 
-        private static string GetWordAtPointer(TextPointer pointer)
-        {
-            var wordStart = pointer;
-            var wordEnd = pointer;
-
-            while (wordStart != null && !IsWordBoundary(wordStart, LogicalDirection.Backward))
-            {
-                wordStart = wordStart.GetPositionAtOffset(-1, LogicalDirection.Backward);
-            }
-
-            while (wordEnd != null && !IsWordBoundary(wordEnd, LogicalDirection.Forward))
-            {
-                wordEnd = wordEnd.GetPositionAtOffset(1, LogicalDirection.Forward);
-            }
-
-            if (wordStart == null || wordEnd == null)
-            {
-                return string.Empty;
-            }
-
-            var range = new System.Windows.Documents.TextRange(wordStart, wordEnd);
-            return range.Text.Trim();
-        }
-
-        private static bool IsWordBoundary(TextPointer pointer, LogicalDirection direction)
-        {
-            var context = pointer.GetPointerContext(direction);
-            if (context != TextPointerContext.Text)
-            {
-                return true;
-            }
-
-            var text = pointer.GetTextInRun(direction);
-            if (string.IsNullOrEmpty(text))
-            {
-                return true;
-            }
-
-            var ch = direction == LogicalDirection.Forward ? text[0] : text[text.Length - 1];
-            return char.IsWhiteSpace(ch) || ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}' || ch == '<' || ch == '>' || ch == '"' || ch == '\'' || ch == ',';
-        }
-
         private TextPointer GetTextPointerAtOffset(int offset)
         {
             var navigator = rtbNotes.Document.ContentStart;
@@ -833,22 +760,7 @@ namespace KevNotes
             return count;
         }
 
-        private static string NormalizeForFormat(string text)
-        {
-            if (text == null)
-            {
-                return string.Empty;
-            }
-
-            if (text.EndsWith("\r\n", StringComparison.Ordinal))
-            {
-                return text.Substring(0, text.Length - 2);
-            }
-
-            return text;
-        }
-
-        private static string NormalizeForSave(string text)
+        private static string NormalizeText(string text)
         {
             if (text == null)
             {
@@ -915,6 +827,30 @@ namespace KevNotes
             }
 
             return string.Join("\n", parts);
+        }
+
+        private bool IsCaretInPotentialUrl(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            var caret = GetCaretIndex();
+            foreach (Match match in UrlScanRegex.Matches(text))
+            {
+                if (caret > match.Index && caret < match.Index + match.Length)
+                {
+                    // If caret is inside a URL and the URL isn't terminated by whitespace yet, skip formatting.
+                    var end = match.Index + match.Length;
+                    if (end < text.Length && !char.IsWhiteSpace(text[end]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private static string GetNotesFilePath(string solutionFullName)
