@@ -37,10 +37,6 @@ namespace KevNotes
         private const string NotesFolderName = "kevNotes";
         private string _fileName = string.Empty;
 
-        private static readonly Regex UrlRegex =
-            new Regex("^((https?://|file://)\\S+|www\\.\\S+|[A-Za-z]:\\\\\\S+|\\\\\\\\\\S+|\"(https?://|file://)[^\"]+\"|\"[A-Za-z]:\\\\[^\"]+\"|\"\\\\\\\\[^\"]+\")$",
-                RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
         private static readonly Regex UrlScanRegex =
             new Regex("((https?://|file://)\\S+|www\\.\\S+|[A-Za-z]:\\\\\\S+|\\\\\\\\\\S+|\"(https?://|file://)[^\"]+\"|\"[A-Za-z]:\\\\[^\"]+\"|\"\\\\\\\\[^\"]+\")",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -220,6 +216,12 @@ namespace KevNotes
             }
 
             var urlSignature = GetUrlSignature(text);
+            if (string.IsNullOrEmpty(urlSignature))
+            {
+                _lastTextSnapshot = text;
+                return;
+            }
+
             if (string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
             {
                 _lastTextSnapshot = text;
@@ -491,7 +493,7 @@ namespace KevNotes
             }
 
             var urlSignature = GetUrlSignature(text);
-            if (string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
+            if (string.IsNullOrEmpty(urlSignature) || string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
             {
                 return;
             }
@@ -574,7 +576,7 @@ namespace KevNotes
                 var raw = match.Value;
                 var isQuoted = raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"';
                 var display = isQuoted ? raw.Substring(1, raw.Length - 2) : raw;
-                var url = NormalizeUrl(display);
+                var url = BuildLinkTarget(display);
 
                 if (isQuoted)
                 {
@@ -679,14 +681,12 @@ namespace KevNotes
             return null;
         }
 
-        private static string NormalizeUrl(string text)
+        private static string BuildLinkTarget(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
                 return text;
             }
-
-            text = TrimQuotes(text);
 
             if (text.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
             {
@@ -712,21 +712,6 @@ namespace KevNotes
                     uriPath = "/" + uriPath;
                 }
                 return "file://" + uriPath;
-            }
-
-            return text;
-        }
-
-        private static string TrimQuotes(string text)
-        {
-            if (string.IsNullOrEmpty(text))
-            {
-                return text;
-            }
-
-            if (text.Length >= 2 && text[0] == '"' && text[text.Length - 1] == '"')
-            {
-                return text.Substring(1, text.Length - 2);
             }
 
             return text;
@@ -767,11 +752,15 @@ namespace KevNotes
                 {
                     if (navigator.GetAdjacentElement(LogicalDirection.Forward) is LineBreak)
                     {
-                        if (count == offset)
+                        if (count >= offset)
                         {
                             return navigator.GetPositionAtOffset(1, LogicalDirection.Forward);
                         }
-                        count += 1;
+                        if (count + 2 >= offset)
+                        {
+                            return navigator.GetPositionAtOffset(1, LogicalDirection.Forward);
+                        }
+                        count += 2;
                     }
                     navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
                 }
@@ -810,7 +799,7 @@ namespace KevNotes
                 {
                     if (navigator.GetAdjacentElement(LogicalDirection.Forward) is LineBreak)
                     {
-                        count += 1;
+                        count += 2;
                     }
                     navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
                 }
