@@ -3,9 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:vsshell="clr-namespace:Microsoft.VisualStudio.Shell;assembly=Microsoft.VisualStudio.Shell.15.0"
-             Background="{DynamicResource {x:Static vsshell:VsBrushes.WindowKey}}"
-             Foreground="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
+             Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+             Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
              mc:Ignorable="d"
              d:DesignHeight="300" d:DesignWidth="300"
              Name="MyToolWindow">
@@ -16,20 +15,17 @@
             <RowDefinition Height="*"></RowDefinition>
         </Grid.RowDefinitions>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Grid.Row="0">
-            <ComboBox x:Name="cboFontFamily" SelectionChanged="cboFontFamily_SelectionChanged"
-                      Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ComboBoxStyleKey}}"></ComboBox>
-            <Button Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
+            <ComboBox x:Name="cboFontFamily" SelectionChanged="cboFontFamily_SelectionChanged"></ComboBox>
+            <Button x:Name="btnFontDown" Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                    Click="Button_Click"
-                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">-</Button>
-            <Button Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
+                    Click="Button_Click">-</Button>
+            <Button x:Name="btnFontUp" Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                    Click="Button_Click_1"
-                    Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">+</Button>
+                    Click="Button_Click_1">+</Button>
         </StackPanel>
         <Border x:Name="FindBar" Grid.Row="1"
-                Background="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarGradientBeginKey}}"
-                BorderBrush="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarBorderKey}}"
+                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                 BorderThickness="0,0,0,1"
                 Padding="6">
             <Grid>
@@ -46,17 +42,12 @@
                     <ColumnDefinition Width="Auto"></ColumnDefinition>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,6,0" VerticalAlignment="Center"
-                           Foreground="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"
-                           Text="Find"></TextBlock>
+                <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,0,6,0" VerticalAlignment="Center" Text="Find"></TextBlock>
                 <TextBox x:Name="tbFind" Grid.Row="0" Grid.Column="1" MinWidth="160" Margin="0,0,6,0"
-                         KeyDown="tbFind_KeyDown" TextChanged="tbFind_TextChanged"
-                         Style="{DynamicResource {x:Static vsshell:VsResourceKeys.TextBoxStyleKey}}"></TextBox>
-                <Button Grid.Row="0" Grid.Column="2" Margin="0,0,6,0" Click="FindNext_Click"
-                        Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">Next</Button>
+                         KeyDown="tbFind_KeyDown" TextChanged="tbFind_TextChanged"></TextBox>
+                <Button x:Name="btnFindNext" Grid.Row="0" Grid.Column="2" Margin="0,0,6,0" Click="FindNext_Click">Next</Button>
                 <CheckBox x:Name="cbMatchCase" Grid.Row="0" Grid.Column="4" Margin="0,0,6,0" VerticalAlignment="Center"
-                          Content="Match case"
-                          Style="{DynamicResource {x:Static vsshell:VsResourceKeys.CheckBoxStyleKey}}"></CheckBox>
+                          Content="Match case"></CheckBox>
 
                 <Grid x:Name="ReplaceRow" Grid.Row="1" Grid.ColumnSpan="6">
                     <Grid.ColumnDefinitions>
@@ -67,25 +58,18 @@
                         <ColumnDefinition Width="Auto"></ColumnDefinition>
                         <ColumnDefinition Width="Auto"></ColumnDefinition>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Margin="0,6,6,0" VerticalAlignment="Center"
-                               Foreground="{DynamicResource {x:Static vsshell:VsBrushes.CommandBarTextActiveKey}}"
-                               Text="Replace"></TextBlock>
+                    <TextBlock Grid.Column="0" Margin="0,6,6,0" VerticalAlignment="Center" Text="Replace"></TextBlock>
                     <TextBox x:Name="tbReplace" Grid.Column="1" Margin="0,6,6,0"
-                             KeyDown="tbReplace_KeyDown"
-                             Style="{DynamicResource {x:Static vsshell:VsResourceKeys.TextBoxStyleKey}}"></TextBox>
-                    <Button Grid.Column="2" Margin="0,6,6,0" Click="Replace_Click"
-                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">Replace</Button>
-                    <Button Grid.Column="3" Margin="0,6,6,0" Click="ReplaceAll_Click"
-                            Style="{DynamicResource {x:Static vsshell:VsResourceKeys.ButtonStyleKey}}">Replace All</Button>
+                             KeyDown="tbReplace_KeyDown"></TextBox>
+                    <Button x:Name="btnReplace" Grid.Column="2" Margin="0,6,6,0" Click="Replace_Click">Replace</Button>
+                    <Button x:Name="btnReplaceAll" Grid.Column="3" Margin="0,6,6,0" Click="ReplaceAll_Click">Replace All</Button>
                 </Grid>
             </Grid>
         </Border>
         <RichTextBox x:Name="rtbNotes" Grid.Row="2"
                  Background="Transparent"
-                 Foreground="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
-                 CaretBrush="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
-                 FontFamily="{DynamicResource {x:Static vsshell:VsFonts.EnvironmentFontFamilyKey}}"
-                 FontSize="{DynamicResource {x:Static vsshell:VsFonts.CaptionFontSizeKey}}"
+                 Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
+                 CaretBrush="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
                  AcceptsReturn="True"
                  AcceptsTab="True"
                  VerticalScrollBarVisibility="Auto"

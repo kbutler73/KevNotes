@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using Task = System.Threading.Tasks.Task;
 using System.Windows.Navigation;
+using System.Windows.Media;
 
 namespace KevNotes
 {
@@ -48,6 +49,7 @@ namespace KevNotes
         {
             Dispatcher.VerifyAccess();
             this.InitializeComponent();
+            ApplyVsTheme();
             ShowFindBar(showReplace: true);
 
             foreach (var fontFamily in FontFamilies.Value)
@@ -87,6 +89,47 @@ namespace KevNotes
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             _outputPane?.OutputString($"{message}{Environment.NewLine}");
+        }
+
+        private void ApplyVsTheme()
+        {
+            try
+            {
+                Background = TryFindResource(VsBrushes.WindowKey) as Brush ?? Background;
+                Foreground = TryFindResource(VsBrushes.WindowTextKey) as Brush ?? Foreground;
+                rtbNotes.Foreground = TryFindResource(VsBrushes.WindowTextKey) as Brush ?? rtbNotes.Foreground;
+                rtbNotes.CaretBrush = TryFindResource(VsBrushes.WindowTextKey) as Brush ?? rtbNotes.CaretBrush;
+
+                var comboStyle = TryFindResource(VsResourceKeys.ComboBoxStyleKey) as Style;
+                if (comboStyle != null) cboFontFamily.Style = comboStyle;
+
+                var buttonStyle = TryFindResource(VsResourceKeys.ButtonStyleKey) as Style;
+                if (buttonStyle != null)
+                {
+                    btnFontDown.Style = buttonStyle;
+                    btnFontUp.Style = buttonStyle;
+                    btnFindNext.Style = buttonStyle;
+                    btnReplace.Style = buttonStyle;
+                    btnReplaceAll.Style = buttonStyle;
+                }
+
+                var textBoxStyle = TryFindResource(VsResourceKeys.TextBoxStyleKey) as Style;
+                if (textBoxStyle != null)
+                {
+                    tbFind.Style = textBoxStyle;
+                    tbReplace.Style = textBoxStyle;
+                }
+
+                var checkBoxStyle = TryFindResource(VsResourceKeys.CheckBoxStyleKey) as Style;
+                if (checkBoxStyle != null) cbMatchCase.Style = checkBoxStyle;
+
+                FindBar.Background = TryFindResource(VsBrushes.CommandBarGradientBeginKey) as Brush ?? FindBar.Background;
+                FindBar.BorderBrush = TryFindResource(VsBrushes.CommandBarBorderKey) as Brush ?? FindBar.BorderBrush;
+            }
+            catch
+            {
+                // Fallback to default WPF styling in the designer or if VS resources are unavailable.
+            }
         }
 
         private async void OnSolutionClosing()
