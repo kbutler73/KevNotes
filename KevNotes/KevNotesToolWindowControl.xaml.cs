@@ -8,8 +8,12 @@ using EnvDTE80;
 using Microsoft.VisualStudio.Shell;
 using System.Linq;
 using Newtonsoft.Json;
+using System.Windows.Documents;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
 using Task = System.Threading.Tasks.Task;
+using System.Windows.Navigation;
 
 namespace KevNotes
 {
@@ -26,8 +30,16 @@ namespace KevNotes
         private DTE2 _dte;
         private OutputWindowPane _outputPane;
         private bool _isLoading;
+        private bool _isFormatting;
+        private bool _suppressFormatOnce;
+        private string _lastUrlSignature = string.Empty;
+        private string _lastTextSnapshot = string.Empty;
         private const string NotesFolderName = "kevNotes";
         private string _fileName = string.Empty;
+
+        private static readonly Regex UrlScanRegex =
+            new Regex("((https?://|file://)\\S+|www\\.\\S+|[A-Za-z]:\\\\\\S+|\\\\\\\\\\S+|\"(https?://|file://)[^\"]+\"|\"[A-Za-z]:\\\\[^\"]+\"|\"\\\\\\\\[^\"]+\")",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="KevNotesToolWindowControl"/> class.
@@ -121,20 +133,18 @@ namespace KevNotes
                     return;
                 }
 
-                tbNotes.Text = data.Note ?? string.Empty;
+                SetNoteText(data.Note ?? string.Empty);
                 if (data.FontFamily != null)
                 {
-                    tbNotes.FontFamily = data.FontFamily;
+                    rtbNotes.FontFamily = data.FontFamily;
                 }
                 if (data.FontSize > 0)
                 {
-                    tbNotes.FontSize = data.FontSize;
+                    rtbNotes.FontSize = data.FontSize;
                 }
                 if (data.CaretIndex >= 0)
                 {
-                    tbNotes.CaretIndex = data.CaretIndex;
-                    var lineIndex = tbNotes.GetLineIndexFromCharacterIndex(data.CaretIndex);
-                    tbNotes.ScrollToLine(lineIndex);
+                    SetCaretIndex(data.CaretIndex);
                 }
 
                 if (data.FontFamily != null)
@@ -174,19 +184,62 @@ namespace KevNotes
             }
         }
 
-        private async void tbNotes_LostFocus(object sender, RoutedEventArgs e)
+        private async void rtbNotes_LostFocus(object sender, RoutedEventArgs e)
         {
+            ApplyLinkFormatting();
             await SaveAsync();
+        }
+
+        private void rtbNotes_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isLoading || _isFormatting)
+            {
+                return;
+            }
+
+            if (_suppressFormatOnce)
+            {
+                _suppressFormatOnce = false;
+                return;
+            }
+
+            var text = GetNoteText();
+            if (string.Equals(text, _lastTextSnapshot, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (IsCaretInPotentialUrl(text))
+            {
+                _lastTextSnapshot = text;
+                return;
+            }
+
+            var urlSignature = GetUrlSignature(text);
+            if (string.IsNullOrEmpty(urlSignature))
+            {
+                _lastTextSnapshot = text;
+                return;
+            }
+
+            if (string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
+            {
+                _lastTextSnapshot = text;
+                return;
+            }
+
+            _lastTextSnapshot = text;
+            ApplyLinkFormatting();
         }
 
         private NotesData CreateSnapshot()
         {
             return new NotesData
             {
-                CaretIndex = tbNotes.CaretIndex,
-                FontFamily = tbNotes.FontFamily,
-                FontSize = tbNotes.FontSize,
-                Note = tbNotes.Text ?? string.Empty
+                CaretIndex = GetCaretIndex(),
+                FontFamily = rtbNotes.FontFamily,
+                FontSize = rtbNotes.FontSize,
+                Note = NormalizeText(GetNoteText())
             };
         }
 
@@ -209,13 +262,13 @@ namespace KevNotes
 
         private async void Button_Click(object sender, RoutedEventArgs e)
         {
-            tbNotes.FontSize--;
+            rtbNotes.FontSize--;
             await SaveAsync();
         }
 
         private async void Button_Click_1(object sender, RoutedEventArgs e)
         {
-            tbNotes.FontSize++;
+            rtbNotes.FontSize++;
             await SaveAsync();
         }
 
@@ -228,17 +281,23 @@ namespace KevNotes
 
             if (cboFontFamily.SelectedItem is FontFamily font)
             {
-                tbNotes.FontFamily = font;
+                rtbNotes.FontFamily = font;
             }
             else
             {
-                tbNotes.FontFamily = new FontFamily("Arial");
+                rtbNotes.FontFamily = new FontFamily("Arial");
             }
             await SaveAsync();
         }
 
-        private void tbNotes_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        private void rtbNotes_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                _suppressFormatOnce = true;
+                return;
+            }
+
             if (e.Key == System.Windows.Input.Key.F3)
             {
                 if (e.KeyboardDevice.Modifiers == System.Windows.Input.ModifierKeys.Shift)
@@ -304,8 +363,8 @@ namespace KevNotes
             }
 
             var comparison = GetFindComparison();
-            var text = tbNotes.Text ?? string.Empty;
-            var startIndex = Math.Max(tbNotes.SelectionStart + tbNotes.SelectionLength, 0);
+            var text = GetNoteText();
+            var startIndex = Math.Max(GetSelectionStart() + GetSelectionLength(), 0);
             var index = text.IndexOf(term, startIndex, comparison);
             if (index < 0 && startIndex > 0)
             {
@@ -326,8 +385,8 @@ namespace KevNotes
             }
 
             var comparison = GetFindComparison();
-            var text = tbNotes.Text ?? string.Empty;
-            var startIndex = Math.Max(tbNotes.SelectionStart - 1, 0);
+            var text = GetNoteText();
+            var startIndex = Math.Max(GetSelectionStart() - 1, 0);
             var index = text.LastIndexOf(term, startIndex, comparison);
             if (index < 0 && text.Length > 0)
             {
@@ -348,14 +407,13 @@ namespace KevNotes
             }
 
             var comparison = GetFindComparison();
-            var selection = tbNotes.SelectedText ?? string.Empty;
+            var selection = GetSelectedText();
             if (selection.Length > 0 && string.Equals(selection, term, comparison))
             {
                 var replaceWith = tbReplace.Text ?? string.Empty;
-                var selectionStart = tbNotes.SelectionStart;
-                tbNotes.SelectedText = replaceWith;
-                tbNotes.SelectionStart = selectionStart;
-                tbNotes.SelectionLength = replaceWith.Length;
+                var selectionStart = GetSelectionStart();
+                ReplaceSelectionText(replaceWith);
+                SetSelection(selectionStart, replaceWith.Length);
                 FindNext();
             }
             else
@@ -372,14 +430,10 @@ namespace KevNotes
             }
 
             var replaceWith = tbReplace.Text ?? string.Empty;
+            var text = GetNoteText();
             var comparison = GetFindComparison();
-            var options = comparison == StringComparison.CurrentCulture
-                ? RegexOptions.None
-                : RegexOptions.IgnoreCase;
-
-            var text = tbNotes.Text ?? string.Empty;
-            var regex = new Regex(Regex.Escape(term), options);
-            tbNotes.Text = regex.Replace(text, replaceWith);
+            var updated = ReplaceAllText(text, term, replaceWith, comparison);
+            SetNoteText(updated);
         }
 
         private bool TryGetFindText(out string term)
@@ -397,10 +451,458 @@ namespace KevNotes
 
         private void SelectMatch(int index, int length)
         {
-            tbNotes.Focus();
-            tbNotes.SelectionStart = index;
-            tbNotes.SelectionLength = length;
-            tbNotes.ScrollToLine(tbNotes.GetLineIndexFromCharacterIndex(index));
+            rtbNotes.Focus();
+            SetSelection(index, length);
+        }
+
+        private string GetNoteText()
+        {
+            var range = new System.Windows.Documents.TextRange(rtbNotes.Document.ContentStart, rtbNotes.Document.ContentEnd);
+            return range.Text;
+        }
+
+        private void SetNoteText(string text)
+        {
+            _isFormatting = true;
+            try
+            {
+                rtbNotes.Document.Blocks.Clear();
+                var paragraph = new Paragraph();
+                BuildInlinesWithLinks(paragraph, NormalizeText(text));
+                rtbNotes.Document.Blocks.Add(paragraph);
+                _lastUrlSignature = GetUrlSignature(text);
+                _lastTextSnapshot = text ?? string.Empty;
+            }
+            finally
+            {
+                _isFormatting = false;
+            }
+        }
+
+        private void ApplyLinkFormatting()
+        {
+            if (_isLoading || _isFormatting)
+            {
+                return;
+            }
+
+            var text = NormalizeText(GetNoteText());
+            if (string.IsNullOrWhiteSpace(text) || !UrlScanRegex.IsMatch(text))
+            {
+                return;
+            }
+
+            var urlSignature = GetUrlSignature(text);
+            if (string.IsNullOrEmpty(urlSignature) || string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var selectionStart = GetSelectionStart();
+            var selectionLength = GetSelectionLength();
+            var caretIndex = GetCaretIndex();
+
+            _isFormatting = true;
+            try
+            {
+                rtbNotes.Document.Blocks.Clear();
+                var paragraph = new Paragraph();
+                BuildInlinesWithLinks(paragraph, text);
+                rtbNotes.Document.Blocks.Add(paragraph);
+                if (selectionLength > 0)
+                {
+                    SetSelection(selectionStart, selectionLength);
+                }
+                else
+                {
+                    var caretPos = GetTextPointerAtOffset(caretIndex);
+                    if (caretPos != null)
+                    {
+                        var hyperlink = FindAncestor<Hyperlink>(caretPos);
+                        if (hyperlink != null)
+                        {
+                            caretPos = hyperlink.ElementEnd;
+                        }
+                        rtbNotes.CaretPosition = caretPos;
+                    }
+                    else
+                    {
+                        SetCaretIndex(caretIndex);
+                    }
+                }
+                _lastUrlSignature = urlSignature;
+                _lastTextSnapshot = text;
+            }
+            finally
+            {
+                _isFormatting = false;
+            }
+        }
+
+        private void BuildInlinesWithLinks(Paragraph paragraph, string text)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            var normalized = text.Replace("\r\n", "\n");
+            var lines = normalized.Split(new[] { '\n' }, StringSplitOptions.None);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                BuildInlinesForLine(paragraph, lines[i]);
+                if (i < lines.Length - 1)
+                {
+                    paragraph.Inlines.Add(new LineBreak());
+                }
+            }
+        }
+
+        private void BuildInlinesForLine(Paragraph paragraph, string line)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                return;
+            }
+
+            var index = 0;
+            foreach (Match match in UrlScanRegex.Matches(line))
+            {
+                if (match.Index > index)
+                {
+                    paragraph.Inlines.Add(new Run(line.Substring(index, match.Index - index)));
+                }
+
+                var raw = match.Value;
+                var isQuoted = raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"';
+                var display = isQuoted ? raw.Substring(1, raw.Length - 2) : raw;
+                var url = BuildLinkTarget(display);
+
+                if (isQuoted)
+                {
+                    paragraph.Inlines.Add(new Run("\""));
+                }
+
+                var hyperlink = new Hyperlink(new Run(display))
+                {
+                    NavigateUri = new Uri(url, UriKind.Absolute)
+                };
+                hyperlink.RequestNavigate += OnHyperlinkRequestNavigate;
+                paragraph.Inlines.Add(hyperlink);
+
+                if (isQuoted)
+                {
+                    paragraph.Inlines.Add(new Run("\""));
+                }
+                index = match.Index + match.Length;
+            }
+
+            if (index < line.Length)
+            {
+                paragraph.Inlines.Add(new Run(line.Substring(index)));
+            }
+        }
+
+        private void OnHyperlinkRequestNavigate(object sender, RequestNavigateEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                WriteOutputAsync($"Error opening link. {ex.Message}");
+            }
+            e.Handled = true;
+        }
+
+        private int GetCaretIndex()
+        {
+            return GetTextOffset(rtbNotes.Document.ContentStart, rtbNotes.CaretPosition);
+        }
+
+        private void SetCaretIndex(int index)
+        {
+            var position = GetTextPointerAtOffset(index);
+            if (position != null)
+            {
+                rtbNotes.CaretPosition = position;
+            }
+        }
+
+        private int GetSelectionStart()
+        {
+            return GetTextOffset(rtbNotes.Document.ContentStart, rtbNotes.Selection.Start);
+        }
+
+        private int GetSelectionLength()
+        {
+            return Math.Max(0, GetTextOffset(rtbNotes.Selection.Start, rtbNotes.Selection.End));
+        }
+
+        private string GetSelectedText()
+        {
+            var range = new System.Windows.Documents.TextRange(rtbNotes.Selection.Start, rtbNotes.Selection.End);
+            return range.Text;
+        }
+
+        private void ReplaceSelectionText(string replacement)
+        {
+            rtbNotes.Selection.Text = replacement;
+        }
+
+        private void SetSelection(int start, int length)
+        {
+            var startPos = GetTextPointerAtOffset(start);
+            var endPos = GetTextPointerAtOffset(start + length);
+            if (startPos != null && endPos != null)
+            {
+                rtbNotes.Selection.Select(startPos, endPos);
+            }
+        }
+
+        private static T FindAncestor<T>(TextPointer pointer) where T : TextElement
+        {
+            if (pointer == null)
+            {
+                return null;
+            }
+
+            var parent = pointer.Parent;
+            while (parent != null)
+            {
+                if (parent is T match)
+                {
+                    return match;
+                }
+                parent = (parent as FrameworkContentElement)?.Parent;
+            }
+
+            return null;
+        }
+
+        private static string BuildLinkTarget(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+
+            if (text.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
+            if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
+            if (text.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+            {
+                return "https://" + text;
+            }
+
+            if (LooksLikeWindowsPath(text))
+            {
+                var uriPath = text.Replace("\\", "/");
+                if (!uriPath.StartsWith("/"))
+                {
+                    uriPath = "/" + uriPath;
+                }
+                return "file://" + uriPath;
+            }
+
+            return text;
+        }
+
+        private static bool LooksLikeWindowsPath(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            if (text.Length >= 3 && char.IsLetter(text[0]) && text[1] == ':' && text[2] == '\\')
+            {
+                return true;
+            }
+
+            return text.StartsWith(@"\\", StringComparison.Ordinal);
+        }
+
+        private TextPointer GetTextPointerAtOffset(int offset)
+        {
+            var navigator = rtbNotes.Document.ContentStart;
+            var count = 0;
+            while (navigator != null)
+            {
+                if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
+                {
+                    var textRun = navigator.GetTextInRun(LogicalDirection.Forward);
+                    if (count + textRun.Length >= offset)
+                    {
+                        return navigator.GetPositionAtOffset(offset - count);
+                    }
+                    count += textRun.Length;
+                    navigator = navigator.GetPositionAtOffset(textRun.Length);
+                }
+                else if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.ElementStart)
+                {
+                    if (navigator.GetAdjacentElement(LogicalDirection.Forward) is LineBreak)
+                    {
+                        if (count >= offset)
+                        {
+                            return navigator.GetPositionAtOffset(1, LogicalDirection.Forward);
+                        }
+                        if (count + 2 >= offset)
+                        {
+                            return navigator.GetPositionAtOffset(1, LogicalDirection.Forward);
+                        }
+                        count += 2;
+                    }
+                    navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
+                }
+                else
+                {
+                    navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
+                }
+            }
+
+            return rtbNotes.Document.ContentEnd;
+        }
+
+        private int GetTextOffset(TextPointer start, TextPointer end)
+        {
+            if (start == null || end == null)
+            {
+                return 0;
+            }
+
+            var count = 0;
+            var navigator = start;
+            while (navigator != null && navigator.CompareTo(end) < 0)
+            {
+                var context = navigator.GetPointerContext(LogicalDirection.Forward);
+                if (context == TextPointerContext.Text)
+                {
+                    var textRun = navigator.GetTextInRun(LogicalDirection.Forward);
+                    var runEnd = navigator.GetPositionAtOffset(textRun.Length, LogicalDirection.Forward);
+                    var take = end.CompareTo(runEnd) < 0
+                        ? new System.Windows.Documents.TextRange(navigator, end).Text.Length
+                        : textRun.Length;
+                    count += take;
+                    navigator = navigator.GetPositionAtOffset(take, LogicalDirection.Forward);
+                }
+                else if (context == TextPointerContext.ElementStart)
+                {
+                    if (navigator.GetAdjacentElement(LogicalDirection.Forward) is LineBreak)
+                    {
+                        count += 2;
+                    }
+                    navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
+                }
+                else
+                {
+                    navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
+                }
+            }
+
+            return count;
+        }
+
+        private static string NormalizeText(string text)
+        {
+            if (text == null)
+            {
+                return string.Empty;
+            }
+
+            if (text.EndsWith("\r\n", StringComparison.Ordinal))
+            {
+                return text.Substring(0, text.Length - 2);
+            }
+
+            return text;
+        }
+
+        private static string ReplaceAllText(string text, string term, string replaceWith, StringComparison comparison)
+        {
+            if (string.IsNullOrEmpty(term))
+            {
+                return text;
+            }
+
+            var comparisonType = comparison == StringComparison.CurrentCulture
+                ? StringComparison.CurrentCulture
+                : StringComparison.CurrentCultureIgnoreCase;
+
+            var result = new StringBuilder(text.Length);
+            var index = 0;
+            while (true)
+            {
+                var matchIndex = text.IndexOf(term, index, comparisonType);
+                if (matchIndex < 0)
+                {
+                    result.Append(text.Substring(index));
+                    break;
+                }
+
+                result.Append(text.Substring(index, matchIndex - index));
+                result.Append(replaceWith);
+                index = matchIndex + term.Length;
+            }
+
+            return result.ToString();
+        }
+
+        private static string GetUrlSignature(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            var parts = new List<string>();
+            foreach (Match match in UrlScanRegex.Matches(text))
+            {
+                if (!string.IsNullOrWhiteSpace(match.Value))
+                {
+                    parts.Add(match.Value.Trim());
+                }
+            }
+
+            if (parts.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return string.Join("\n", parts);
+        }
+
+        private bool IsCaretInPotentialUrl(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            var caret = GetCaretIndex();
+            foreach (Match match in UrlScanRegex.Matches(text))
+            {
+                if (caret > match.Index && caret < match.Index + match.Length)
+                {
+                    // If caret is inside a URL and the URL isn't terminated by whitespace yet, skip formatting.
+                    var end = match.Index + match.Length;
+                    if (end < text.Length && !char.IsWhiteSpace(text[end]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private static string GetNotesFilePath(string solutionFullName)

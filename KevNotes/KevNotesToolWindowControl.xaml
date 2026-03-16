@@ -80,17 +80,24 @@
                 </Grid>
             </Grid>
         </Border>
-        <TextBox x:Name="tbNotes" Grid.Row="2"
+        <RichTextBox x:Name="rtbNotes" Grid.Row="2"
                  Background="Transparent"
                  Foreground="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
                  CaretBrush="{DynamicResource {x:Static vsshell:VsBrushes.WindowTextKey}}"
                  FontFamily="{DynamicResource {x:Static vsshell:VsFonts.EnvironmentFontFamilyKey}}"
                  FontSize="{DynamicResource {x:Static vsshell:VsFonts.CaptionFontSizeKey}}"
-                 TextWrapping="Wrap"
                  AcceptsReturn="True"
                  AcceptsTab="True"
                  VerticalScrollBarVisibility="Auto"
-                 PreviewKeyDown="tbNotes_PreviewKeyDown"
-                 LostFocus="tbNotes_LostFocus" />
+                 IsDocumentEnabled="True"
+                 TextChanged="rtbNotes_TextChanged"
+                 PreviewKeyDown="rtbNotes_PreviewKeyDown"
+                 LostFocus="rtbNotes_LostFocus">
+            <RichTextBox.Resources>
+                <Style TargetType="{x:Type Paragraph}">
+                    <Setter Property="Margin" Value="0" />
+                </Style>
+            </RichTextBox.Resources>
+        </RichTextBox>
     </Grid>
 </UserControl>
