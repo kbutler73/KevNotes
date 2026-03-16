@@ -38,10 +38,12 @@ namespace KevNotes
         private string _fileName = string.Empty;
 
         private static readonly Regex UrlRegex =
-            new Regex(@"^(https?://|www\.)\S+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new Regex("^((https?://|file://)\\S+|www\\.\\S+|[A-Za-z]:\\\\\\S+|\\\\\\\\\\S+|\"(https?://|file://)[^\"]+\"|\"[A-Za-z]:\\\\[^\"]+\"|\"\\\\\\\\[^\"]+\")$",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex UrlScanRegex =
-            new Regex(@"(https?://\S+|www\.\S+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+            new Regex("((https?://|file://)\\S+|www\\.\\S+|[A-Za-z]:\\\\\\S+|\\\\\\\\\\S+|\"(https?://|file://)[^\"]+\"|\"[A-Za-z]:\\\\[^\"]+\"|\"\\\\\\\\[^\"]+\")",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="KevNotesToolWindowControl"/> class.
@@ -569,13 +571,27 @@ namespace KevNotes
                     paragraph.Inlines.Add(new Run(line.Substring(index, match.Index - index)));
                 }
 
-                var url = NormalizeUrl(match.Value);
-                var hyperlink = new Hyperlink(new Run(match.Value))
+                var raw = match.Value;
+                var isQuoted = raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"';
+                var display = isQuoted ? raw.Substring(1, raw.Length - 2) : raw;
+                var url = NormalizeUrl(display);
+
+                if (isQuoted)
+                {
+                    paragraph.Inlines.Add(new Run("\""));
+                }
+
+                var hyperlink = new Hyperlink(new Run(display))
                 {
                     NavigateUri = new Uri(url, UriKind.Absolute)
                 };
                 hyperlink.RequestNavigate += OnHyperlinkRequestNavigate;
                 paragraph.Inlines.Add(hyperlink);
+
+                if (isQuoted)
+                {
+                    paragraph.Inlines.Add(new Run("\""));
+                }
                 index = match.Index + match.Length;
             }
 
@@ -670,6 +686,13 @@ namespace KevNotes
                 return text;
             }
 
+            text = TrimQuotes(text);
+
+            if (text.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
             if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                 text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
@@ -681,7 +704,47 @@ namespace KevNotes
                 return "https://" + text;
             }
 
+            if (LooksLikeWindowsPath(text))
+            {
+                var uriPath = text.Replace("\\", "/");
+                if (!uriPath.StartsWith("/"))
+                {
+                    uriPath = "/" + uriPath;
+                }
+                return "file://" + uriPath;
+            }
+
             return text;
+        }
+
+        private static string TrimQuotes(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+
+            if (text.Length >= 2 && text[0] == '"' && text[text.Length - 1] == '"')
+            {
+                return text.Substring(1, text.Length - 2);
+            }
+
+            return text;
+        }
+
+        private static bool LooksLikeWindowsPath(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+
+            if (text.Length >= 3 && char.IsLetter(text[0]) && text[1] == ':' && text[2] == '\\')
+            {
+                return true;
+            }
+
+            return text.StartsWith(@"\\", StringComparison.Ordinal);
         }
 
         private TextPointer GetTextPointerAtOffset(int offset)
