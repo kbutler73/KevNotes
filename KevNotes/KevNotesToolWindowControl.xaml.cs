@@ -34,6 +34,7 @@ namespace KevNotes
         private bool _isFormatting;
         private bool _suppressFormatOnce;
         private string _lastUrlSignature = string.Empty;
+        private string _lastTextSnapshot = string.Empty;
         private const string NotesFolderName = "kevNotes";
         private string _fileName = string.Empty;
 
@@ -205,6 +206,20 @@ namespace KevNotes
                 return;
             }
 
+            var text = GetNoteText();
+            if (string.Equals(text, _lastTextSnapshot, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var urlSignature = GetUrlSignature(text);
+            if (string.Equals(urlSignature, _lastUrlSignature, StringComparison.Ordinal))
+            {
+                _lastTextSnapshot = text;
+                return;
+            }
+
+            _lastTextSnapshot = text;
             ApplyLinkFormatting();
         }
 
@@ -483,6 +498,7 @@ namespace KevNotes
                 BuildInlinesWithLinks(paragraph, NormalizeForFormat(text));
                 rtbNotes.Document.Blocks.Add(paragraph);
                 _lastUrlSignature = GetUrlSignature(text);
+                _lastTextSnapshot = text ?? string.Empty;
             }
             finally
             {
@@ -526,9 +542,23 @@ namespace KevNotes
                 }
                 else
                 {
-                    SetCaretIndex(caretIndex);
+                    var caretPos = GetTextPointerAtOffset(caretIndex);
+                    if (caretPos != null)
+                    {
+                        var hyperlink = FindAncestor<Hyperlink>(caretPos);
+                        if (hyperlink != null)
+                        {
+                            caretPos = hyperlink.ElementEnd;
+                        }
+                        rtbNotes.CaretPosition = caretPos;
+                    }
+                    else
+                    {
+                        SetCaretIndex(caretIndex);
+                    }
                 }
                 _lastUrlSignature = urlSignature;
+                _lastTextSnapshot = text;
             }
             finally
             {
@@ -642,6 +672,26 @@ namespace KevNotes
             {
                 rtbNotes.Selection.Select(startPos, endPos);
             }
+        }
+
+        private static T FindAncestor<T>(TextPointer pointer) where T : TextElement
+        {
+            if (pointer == null)
+            {
+                return null;
+            }
+
+            var parent = pointer.Parent;
+            while (parent != null)
+            {
+                if (parent is T match)
+                {
+                    return match;
+                }
+                parent = (parent as FrameworkContentElement)?.Parent;
+            }
+
+            return null;
         }
 
         private static string NormalizeUrl(string text)
@@ -850,21 +900,21 @@ namespace KevNotes
                 return string.Empty;
             }
 
-            var urls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var parts = new List<string>();
             foreach (Match match in UrlScanRegex.Matches(text))
             {
                 if (!string.IsNullOrWhiteSpace(match.Value))
                 {
-                    urls.Add(match.Value.Trim());
+                    parts.Add(match.Value.Trim());
                 }
             }
 
-            if (urls.Count == 0)
+            if (parts.Count == 0)
             {
                 return string.Empty;
             }
 
-            return string.Join("\n", urls.OrderBy(x => x));
+            return string.Join("\n", parts);
         }
 
         private static string GetNotesFilePath(string solutionFullName)
