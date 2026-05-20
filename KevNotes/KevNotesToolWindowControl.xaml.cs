@@ -32,6 +32,7 @@ namespace KevNotes
         private OutputWindowPane _outputPane;
         private bool _isLoading;
         private bool _isFormatting;
+        private bool _isToolsCollapsed;
         private bool _suppressFormatOnce;
         private string _lastUrlSignature = string.Empty;
         private string _lastTextSnapshot = string.Empty;
@@ -108,6 +109,7 @@ namespace KevNotes
                 {
                     btnFontDown.Style = buttonStyle;
                     btnFontUp.Style = buttonStyle;
+                    btnToggleTools.Style = buttonStyle;
                     btnFindNext.Style = buttonStyle;
                     btnReplace.Style = buttonStyle;
                     btnReplaceAll.Style = buttonStyle;
@@ -189,6 +191,7 @@ namespace KevNotes
                 {
                     SetCaretIndex(data.CaretIndex);
                 }
+                SetToolsCollapsed(data.IsToolsCollapsed ?? true);
 
                 if (data.FontFamily != null)
                 {
@@ -282,6 +285,7 @@ namespace KevNotes
                 CaretIndex = GetCaretIndex(),
                 FontFamily = rtbNotes.FontFamily,
                 FontSize = rtbNotes.FontSize,
+                IsToolsCollapsed = _isToolsCollapsed,
                 Note = NormalizeText(GetNoteText())
             };
         }
@@ -390,6 +394,24 @@ namespace KevNotes
         private void ReplaceAll_Click(object sender, RoutedEventArgs e)
         {
             ReplaceAll();
+        }
+
+        private async void ToggleTools_Click(object sender, RoutedEventArgs e)
+        {
+            SetToolsCollapsed(!_isToolsCollapsed);
+            rtbNotes.Focus();
+            await SaveAsync();
+        }
+
+        private void SetToolsCollapsed(bool isCollapsed)
+        {
+            _isToolsCollapsed = isCollapsed;
+
+            var toolsVisibility = isCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            FindBar.Visibility = toolsVisibility;
+
+            btnToggleTools.Content = isCollapsed ? "▼" : "▲";
+            btnToggleTools.ToolTip = isCollapsed ? "Expand tools" : "Collapse tools";
         }
 
         private void ShowFindBar(bool showReplace)

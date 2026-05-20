@@ -10,7 +10,7 @@
              Name="MyToolWindow">
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="25"></RowDefinition>
+            <RowDefinition Height="Auto"></RowDefinition>
             <RowDefinition Height="Auto"></RowDefinition>
             <RowDefinition Height="*"></RowDefinition>
         </Grid.RowDefinitions>
@@ -22,6 +22,10 @@
             <Button x:Name="btnFontUp" Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
                     HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                     Click="Button_Click_1">+</Button>
+            <Button x:Name="btnToggleTools" Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    ToolTip="Collapse tools"
+                    Click="ToggleTools_Click">▲</Button>
         </StackPanel>
         <Border x:Name="FindBar" Grid.Row="1"
                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
