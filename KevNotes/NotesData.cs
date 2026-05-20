@@ -7,6 +7,7 @@ namespace KevNotes
         public FontFamily FontFamily { get; set; }
         public int CaretIndex { get; set; }
         public double FontSize { get; set; }
+        public bool? IsToolsCollapsed { get; set; }
         public string Note { get; set; }
     }
 }
