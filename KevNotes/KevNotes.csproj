@@ -51,6 +51,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Extensions\TextPointerExtensions.cs" />
     <Compile Include="KevNotesOptionsPackage.cs" />
     <Compile Include="KevNotesToolWindow.cs" />
     <Compile Include="KevNotesToolWindowCommand.cs" />
