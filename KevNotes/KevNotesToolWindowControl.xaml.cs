@@ -14,7 +14,10 @@ using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using Task = System.Threading.Tasks.Task;
 using System.Windows.Navigation;
+
 using System.Windows.Media;
+
+using System.Windows.Threading;
 
 namespace KevNotes
 {
@@ -43,6 +46,8 @@ namespace KevNotes
             new Regex("((https?://|file://)\\S+|www\\.\\S+|[A-Za-z]:\\\\\\S+|\\\\\\\\\\S+|\"(https?://|file://)[^\"]+\"|\"[A-Za-z]:\\\\[^\"]+\"|\"\\\\\\\\[^\"]+\")",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Live link formatting disabled to avoid caret jumps while typing.
+
         /// <summary>
         /// Initializes a new instance of the <see cref="KevNotesToolWindowControl"/> class.
         /// </summary>
@@ -57,6 +62,9 @@ namespace KevNotes
             {
                 cboFontFamily.Items.Add(fontFamily);
             }
+
+            // Live link formatting disabled to avoid caret jumps while typing. Formatting
+            // will occur on LostFocus and when loading the document.
 
             try
             {
@@ -275,7 +283,6 @@ namespace KevNotes
             }
 
             _lastTextSnapshot = text;
-            ApplyLinkFormatting();
         }
 
         private NotesData CreateSnapshot()
@@ -583,11 +590,6 @@ namespace KevNotes
                     var caretPos = GetTextPointerAtOffset(caretIndex);
                     if (caretPos != null)
                     {
-                        var hyperlink = FindAncestor<Hyperlink>(caretPos);
-                        if (hyperlink != null)
-                        {
-                            caretPos = hyperlink.ElementEnd;
-                        }
                         rtbNotes.CaretPosition = caretPos;
                     }
                     else
@@ -648,12 +650,22 @@ namespace KevNotes
                     paragraph.Inlines.Add(new Run("\""));
                 }
 
-                var hyperlink = new Hyperlink(new Run(display))
+                // Only create a hyperlink if the URL can be parsed as an absolute URI with a supported scheme.
+                if (Uri.TryCreate(url, UriKind.Absolute, out var navigateUri) &&
+                    (navigateUri.Scheme == Uri.UriSchemeHttp || navigateUri.Scheme == Uri.UriSchemeHttps || navigateUri.Scheme == Uri.UriSchemeFile))
                 {
-                    NavigateUri = new Uri(url, UriKind.Absolute)
-                };
-                hyperlink.RequestNavigate += OnHyperlinkRequestNavigate;
-                paragraph.Inlines.Add(hyperlink);
+                    var hyperlink = new Hyperlink(new Run(display))
+                    {
+                        NavigateUri = navigateUri
+                    };
+                    hyperlink.RequestNavigate += OnHyperlinkRequestNavigate;
+                    paragraph.Inlines.Add(hyperlink);
+                }
+                else
+                {
+                    // If the URL is not a valid absolute URI, render as plain text to avoid UriFormatException
+                    paragraph.Inlines.Add(new Run(display));
+                }
 
                 if (isQuoted)
                 {
@@ -956,14 +968,12 @@ namespace KevNotes
             var caret = GetCaretIndex();
             foreach (Match match in UrlScanRegex.Matches(text))
             {
-                if (caret > match.Index && caret < match.Index + match.Length)
+                // If caret is inside a URL (including just after the last typed character), skip formatting.
+                // This prevents rebuilding the document while the user is typing a URL which can
+                // change element boundaries and move the caret unexpectedly.
+                if (caret >= match.Index && caret <= match.Index + match.Length)
                 {
-                    // If caret is inside a URL and the URL isn't terminated by whitespace yet, skip formatting.
-                    var end = match.Index + match.Length;
-                    if (end < text.Length && !char.IsWhiteSpace(text[end]))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
 
